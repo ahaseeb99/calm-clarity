@@ -1,0 +1,457 @@
+jQuery(function ($) {
+    "use strict";
+
+    // email resend
+    $('.resend').on('click', function (e) { 						// Button which will activate our modal
+        var the_id = $(this).attr('id');						//get the id
+        // show the spinner
+        $(this).html("<i class='fa fa-spinner fa-pulse'></i>");
+        $.ajax({											//the main ajax request
+            type: "POST",
+            data: "action=email_verify&id=" + $(this).attr("id"),
+            url: ajaxurl,
+            success: function (data) {
+                $("span#resend_count" + the_id).html(data);
+                //fadein the vote count
+                $("span#resend_count" + the_id).fadeIn();
+                //remove the spinner
+                $("a.resend_buttons" + the_id).remove();
+
+            }
+        });
+        return false;
+    });
+
+    // user login
+    $("#login-form").on('submit', function (e) {
+        e.preventDefault();
+        $("#login-status").slideUp();
+        $('#login-button').addClass('button-progress').prop('disabled', true);
+        var form_data = {
+            action: 'ajaxlogin',
+            username: $("#username").val(),
+            password: $("#password").val(),
+            is_ajax: 1
+        };
+        $.ajax({
+            type: "POST",
+            url: ajaxurl,
+            data: form_data,
+            dataType: 'json',
+            success: function (response) {
+                $('#login-button').removeClass('button-progress').prop('disabled', false);
+                if (response.success) {
+                    $("#login-status").addClass('success').removeClass('error').html('<p>' + LANG_LOGGED_IN_SUCCESS + '</p>').slideDown();
+                    window.location.href = response.message;
+                } else {
+                    $("#login-status").removeClass('success').addClass('error').html('<p>' + response.message + '</p>').slideDown();
+                }
+            }
+        });
+        return false;
+    });
+
+    $("#newsletter-form").on('submit', function (e) {
+        e.preventDefault();
+        $("#newsletter-form-status").slideUp();
+        var $btn = $(this).find('.btn');
+        $btn.addClass('button-progress').prop('disabled', true);
+        var form_data = {
+            action: 'add_email_subscriber',
+            email: $(".newsletter-email").val(),
+        };
+        $.ajax({
+            type: "POST",
+            url: ajaxurl,
+            data: form_data,
+            dataType: 'json',
+            success: function (response) {
+                $btn.removeClass('button-progress').prop('disabled', false);
+                if (response.success) {
+                    $("#newsletter-form-status").addClass('success').removeClass('error').html(response.message ).slideDown();
+                    $(".newsletter-email").val('');
+                } else {
+                    $("#newsletter-form-status").removeClass('success').addClass('error').html(response.message).slideDown();
+                }
+                setTimeout(function() {
+                    $('#newsletter-form-status').slideUp();
+                }, 5000);
+            }
+        });
+        return false;
+    });
+
+    // blog comment with ajax
+    $('.blog-comment-form').on('submit', function (e) {
+        e.preventDefault();
+
+        var action = 'submitBlogComment';
+        var data = $(this).serialize();
+        var $parent_cmnt = $(this).find('#comment_parent').val();
+        var $cmnt_field = $(this).find('#comment-field');
+        var $btn = $(this).find('.button');
+        $btn.addClass('button-progress').prop('disabled', true);
+
+        $.ajax({
+            type: "POST",
+            url: ajaxurl + '?action=' + action,
+            data: data,
+            dataType: 'json',
+            success: function (response) {
+                $btn.removeClass('button-progress').prop('disabled', false);
+                if (response.success) {
+                    if ($parent_cmnt == 0) {
+                        $('.latest-comments > ul').prepend(response.html);
+                    } else {
+                        $('#li-comment-' + $parent_cmnt).after(response.html);
+                    }
+                    $('html, body').animate({
+                        scrollTop: $("#li-comment-" + response.id).offset().top
+                    }, 2000);
+                    $cmnt_field.val('');
+                } else {
+                    $('#respond > .widget-content').prepend('<div class="notification error"><p>' + response.error + '</p></div>');
+                }
+            }
+        });
+    });
+
+    /* generate content */
+    $('#ai_form').on('submit', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var action = 'generate_content';
+        var data = new FormData(this),
+            $form = $(this);
+
+        var $btn = $(this).find('.button'),
+            $error = $(this).find('.form-error');
+        $btn.addClass('button-progress').prop('disabled', true);
+
+        $error.slideUp();
+
+        data = $form.serialize();
+
+        let eventSource = new EventSource(`${ajaxurl}?action=${action}&${data}`);
+
+        let msg = tinymce.activeEditor.getContent();
+        if (msg) {
+            msg += '\n\n'
+        }
+
+        let ENABLE_STREAMING = true;
+
+        eventSource.onmessage = function (e) {
+            if (e.data === "[DONE]") {
+                $btn.removeClass('button-progress').prop('disabled', false);
+
+                if(!ENABLE_STREAMING) {
+                    let str = msg;
+
+                    str = str.replace(/```(\w+)?([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
+                    str = str.replace(/(?:\r\n|\r|\n)/g, '<br>');
+
+                    tinymce.activeEditor.setContent(str);
+                }
+
+                eventSource.close();
+
+            } else {
+                let error = JSON.parse(e.data).error;
+                if (error !== undefined) {
+                    console.log(e.data);
+                    eventSource.close();
+                    $btn.removeClass('button-progress').prop('disabled', false);
+                    $error.html(error).slideDown().focus();
+                    return;
+                }
+
+                let data = JSON.parse(e.data);
+                let txt = data.choices[0].delta.content;
+                if (txt !== undefined) {
+                    msg = msg + txt;
+
+                    if(!ENABLE_STREAMING) {
+                        return;
+                    }
+
+                    let str = msg;
+
+                    str = str.replace(/```(\w+)?([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
+                    str = str.replace(/(?:\r\n|\r|\n)/g, '<br>');
+
+                    tinymce.activeEditor.setContent(str);
+                }
+            }
+        };
+        eventSource.onerror = function (e) {
+            $btn.removeClass('button-progress').prop('disabled', false);
+            console.log(e);
+            eventSource.close();
+        };
+
+    });
+
+    /* generate speech to text */
+    $('#speech_to_text').on('submit', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        var action = 'speech_to_text';
+        var data = new FormData(this),
+            $form = $(this);
+
+        var $btn = $(this).find('.button'),
+            $error = $(this).find('.form-error');
+        $btn.addClass('button-progress').prop('disabled', true);
+
+        $error.slideUp();
+        $.ajax({
+            type: "POST",
+            url: ajaxurl + '?action=' + action,
+            data: data,
+            dataType: 'json',
+            cache: false,
+            contentType: false,
+            processData: false,
+            success: function (response) {
+                $btn.removeClass('button-progress').prop('disabled', false);
+                if (response.success) {
+                    tinymce.activeEditor.setContent(response.text);
+                    tinymce.activeEditor.focus();
+
+                    tinyMCE.activeEditor.selection.select(tinyMCE.activeEditor.getBody(), true);
+                    tinyMCE.activeEditor.selection.collapse(false);
+
+                    $('.simplebar-scroll-content').animate({
+                        scrollTop: $("#content-focus").offset().top
+                    }, 500);
+
+                    animate_value('quick-speech-left', response.old_used_speech, response.current_used_speech, 1000)
+                } else {
+                    $error.html(response.error).slideDown().focus();
+                }
+            }
+        });
+    });
+
+    /* generate code */
+    $('#ai_code').on('submit', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        var action = 'ai_code';
+        var data = new FormData(this),
+            $form = $(this);
+
+        var $btn = $(this).find('.button'),
+            $error = $(this).find('.form-error');
+        $btn.addClass('button-progress').prop('disabled', true);
+
+        $error.slideUp();
+        $.ajax({
+            type: "POST",
+            url: ajaxurl + '?action=' + action,
+            data: data,
+            dataType: 'json',
+            cache: false,
+            contentType: false,
+            processData: false,
+            success: function (response) {
+                $btn.removeClass('button-progress').prop('disabled', false);
+                if (response.success) {
+                    $("#content-focus").html(response.text);
+
+                    $('.simplebar-scroll-content').animate({
+                        scrollTop: $("#content-focus").offset().top
+                    }, 500);
+                    hljs.highlightAll();
+
+                    animate_value('quick-words-left', response.old_used_words, response.current_used_words, 4000)
+                } else {
+                    $error.html(response.error).slideDown().focus();
+                }
+            }
+        });
+    });
+
+    /* save ai document */
+    $('#ai_document_form').on('submit', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var action = 'save_document';
+        var data = new FormData(this),
+            $form = $(this);
+
+        var $btn = $(this).find('.button'),
+            $error = $(this).find('.form-error');
+        $btn.addClass('button-progress').prop('disabled', true);
+
+        $error.slideUp();
+        $.ajax({
+            type: "POST",
+            url: ajaxurl + '?action=' + action,
+            data: data,
+            dataType: 'json',
+            cache: false,
+            contentType: false,
+            processData: false,
+            success: function (response) {
+                $btn.removeClass('button-progress').prop('disabled', false);
+                if (response.success) {
+                    $form.find('#post_id').val(response.id);
+                    Snackbar.show({
+                        text: response.message,
+                        pos: 'bottom-center',
+                        showAction: false,
+                        actionText: "Dismiss",
+                        duration: 3000,
+                        textColor: '#fff',
+                        backgroundColor: '#383838'
+                    });
+                } else {
+                    $error.html(response.error).slideDown().focus();
+                }
+            }
+        });
+    });
+
+    /* ai images */
+    $('#ai_images').on('submit', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var action = 'generate_image';
+        var data = new FormData(this),
+            $form = $(this);
+
+        var $btn = $(this).find('.button'),
+            $error = $(this).find('.form-error');
+        $btn.addClass('button-progress').prop('disabled', true);
+
+        $error.slideUp();
+        $.ajax({
+            type: "POST",
+            url: ajaxurl + '?action=' + action,
+            data: data,
+            dataType: 'json',
+            cache: false,
+            contentType: false,
+            processData: false,
+            success: function (response) {
+                $btn.removeClass('button-progress').prop('disabled', false);
+                if (response.success) {
+                    $('#generated_images_notice').hide();
+
+                    $.each(response.data, function( index, value ) {
+                        $("#generated_images_wrapper").prepend('<div class="col-sm-4 col-md-2 col-6 margin-bottom-30"><a href="'+ value.large +'" target="_blank" class="ai-lightbox-image"><img width="100%" src="'+ value.small +'" alt="" data-tippy-placement="top" title="'+ response.description +'"></a></div>')
+                    });
+
+                    /* refresh lightbox */
+                    window.lgData[$('.image-lightbox').attr('lg-uid')].destroy(true);
+                    lightGallery($('.image-lightbox').get(0),{
+                        selector: '.ai-lightbox-image',
+                        download: true,
+                    });
+
+                    animate_value('quick-images-left', response.old_used_images, response.current_used_images, 1000)
+
+                    $('.simplebar-scroll-content').animate({
+                        scrollTop: $("#generated_images_wrapper").offset().top
+                    }, 500);
+                } else {
+                    $error.html(response.error).slideDown().focus();
+                }
+            }
+        });
+    });
+
+    /* ai images */
+    $('#ai_text_speech').on('submit', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        var action = 'text_to_speech';
+        var data = new FormData(this),
+            $form = $(this);
+
+        var $btn = $(this).find('.button'),
+            $error = $(this).find('.form-error');
+        $btn.addClass('button-progress').prop('disabled', true);
+
+        $error.slideUp();
+        $.ajax({
+            type: "POST",
+            url: ajaxurl + '?action=' + action,
+            data: data,
+            dataType: 'json',
+            cache: false,
+            contentType: false,
+            processData: false,
+            success: function (response) {
+                $btn.removeClass('button-progress').prop('disabled', false);
+                if (response.success) {
+                    location.reload();
+                } else {
+                    $error.html(response.error).slideDown().focus();
+                }
+            }
+        });
+    });
+
+    /* delete ajax */
+    $('.quick-delete').on('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        var $btn = $(this);
+        var action = $btn.data('action');
+
+        if(confirm(LANG_ARE_YOU_SURE)) {
+            $btn.addClass('button-progress').prop('disabled', true);
+            $.ajax({
+                type: "POST",
+                url: ajaxurl + '?action=' + action,
+                data: {
+                    'id': $btn.data('id')
+                },
+                dataType: 'json',
+                success: function (response) {
+                    $btn.removeClass('button-progress').prop('disabled', false);
+                    if (response.success) {
+                        $btn.closest('tr').fadeOut("slow", function(){
+                            $(this).remove();
+                        })
+
+                        Snackbar.show({
+                            text: response.message,
+                            pos: 'bottom-center',
+                            showAction: false,
+                            actionText: "Dismiss",
+                            duration: 3000,
+                            textColor: '#fff',
+                            backgroundColor: '#383838'
+                        });
+                    }
+                }
+            });
+        }
+    });
+
+    function animate_value(id, start, end, duration) {
+        start = parseInt(start);
+        end = parseInt(end);
+        if (start === end) return;
+        var range = end - start;
+        var current = parseInt(start);
+        var increment = end > start? 1 : -1;
+        var stepTime = Math.abs(Math.floor(duration / range));
+        var obj = document.getElementById(id);
+        var timer = setInterval(function() {
+            current += increment;
+            obj.innerHTML = current;
+            if (current == end) {
+                clearInterval(timer);
+            }
+        }, stepTime);
+    }
+});

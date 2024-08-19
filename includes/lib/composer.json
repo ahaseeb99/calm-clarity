@@ -1,0 +1,9 @@
+{
+    "require": {
+        "google/cloud-text-to-speech": "^1.7",
+        "aws/aws-sdk-php": "^3.281"
+    },
+    "config": {
+        "platform-check": false
+    }
+}
