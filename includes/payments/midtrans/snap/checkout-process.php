@@ -8,6 +8,7 @@ Config::$serverKey = "";
 
 // Uncomment for production environment
 // Config::$isProduction = true;
+//ser ver key SB - Mid - server - aq1VlQOhd c22PLCH7 Uxuv4 IH
 
 // Enable sanitization
 Config::$isSanitized = true;
